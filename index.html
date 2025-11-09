@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Invoice Generator </title>
+
+  <!-- Simple styling -->
+  <style>
+    :root{--primary:#0b5ed7;--muted:#666}
+    body{font-family:Inter,Segoe UI,Helvetica,Arial,sans-serif; margin:20px; color:#060505;}
+    .container{max-width:980px;margin:0 auto;}
+    h1{color:var(--primary); margin-bottom:6px;}
+    .flex{display:flex;gap:12px;align-items:center}
+    .card{border:1px solid #21b13b;padding:16px;border-radius:8px;margin-bottom:16px;background:#74ebd5}
+    table{width:100%;border-collapse:collapse}
+    table th, table td{padding:8px;border:1px solid #ddd;text-align:left}
+    input[type="text"], input[type="number"]{padding:8px;border:1px solid #ccc;border-radius:4px;width:100%}
+    button{background:var(--primary);color:#ddd;border:none;padding:8px 12px;border-radius:6px;cursor:pointer}
+    .muted{color:var(--muted);font-size:14px}
+    .right{text-align:right}
+    .small{font-size:13px}
+    .actions{display:flex;gap:8px}
+    @media (max-width:640px){ .flex{flex-direction:column;align-items:stretch} }
+  </style>
+
+  <!-- jsPDF and html2canvas from CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+</head>
+<body>
+  <div class="container">
+    <h1>Invoice Generator Application</h1>
+    <div class="card">
+      <div class="flex">
+        <div style="flex:1">
+          <label class="small">Invoice No</label>
+          <input id="invoiceNo" type="text" value="INV-001" />
+        </div>
+        <div style="flex:1">
+          <label class="small">Invoice Date</label>
+          <input id="invoiceDate" type="date" />
+        </div>
+        <div style="flex:1">
+          <label class="small">Customer Name</label>
+          <input id="custName" type="text" placeholder="Customer / Company" />
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <strong>Items</strong>
+        <div class="actions">
+          <button id="addRow">+ Add Item</button>
+          <button id="loadSample" style="background:#28a745">Sample</button>
+        </div>
+      </div>
+
+      <table id="itemsTable">
+        <thead>
+          <tr>
+            <th style="width:40%">Item Description</th>
+            <th style="width:12%">Qty</th>
+            <th style="width:18%">Rate (₹)</th>
+            <th style="width:18%">Total (₹)</th>
+            <th style="width:12%">Action</th>
+          </tr>
+        </thead>
+        <tbody id="itemsBody">
+          <!-- rows inserted here -->
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card" style="display:flex;gap:16px;flex-wrap:wrap;justify-content:flex-end">
+      <div style="min-width:280px">
+        <label class="small">Subtotal (₹)</label>
+        <div id="subtotal" class="muted right">0.00</div>
+        <label class="small" style="margin-top:8px">Tax (%)</label>
+        <input id="taxPercent" type="number" value="18" min="0" />
+        <div class="small muted">Enter tax percentage (e.g., 18 for GST)</div>
+        <label class="small" style="margin-top:8px">Discount (₹)</label>
+        <input id="discount" type="number" value="0" min="0" />
+      </div>
+
+      <div style="min-width:260px">
+        <label class="small">Tax Amount (₹)</label>
+        <div id="taxAmount" class="muted right">0.00</div>
+        <label class="small" style="margin-top:8px">Grand Total (₹)</label>
+        <div id="grandTotal" style="font-size:20px;font-weight:600" class="right">0.00</div>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-bottom:30px">
+      <button id="saveLocal" style="background:#6c757d">Save Locally</button>
+      <button id="downloadPdf">Download PDF</button>
+    </div>
+
+    <div id="invoicePreview" class="card" style="background:#f9f9f9">
+      <!-- Invoice preview that will be used for PDF -->
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <div>
+          <h2 style="margin:0">Rawal Institutions</h2>
+          <div class="muted small">Department of Computer Science & Engineering</div>
+        </div>
+        <div class="right">
+          <div id="pvInvoiceNo" style="font-weight:700">INV-001</div>
+          <div id="pvDate" class="muted small">Date</div>
+        </div>
+      </div>
+
+      <div style="margin-bottom:12px">
+        <strong>Bill To:</strong>
+        <div id="pvCustName" class="muted">Customer Name</div>
+      </div>
+
+      <table id="pvTable" style="width:100%;border-collapse:collapse">
+        <thead>
+          <tr style="background:#0bb124">
+            <th style="padding:8px;border:1px solid #ddd">Description</th>
+            <th style="padding:8px;border:1px solid #ddd">Qty</th>
+            <th style="padding:8px;border:1px solid #ddd">Rate (₹)</th>
+            <th style="padding:8px;border:1px solid #ddd">Total (₹)</th>
+          </tr>
+        </thead>
+        <tbody id="pvBody"></tbody>
+      </table>
+
+      <div style="display:flex;justify-content:flex-end;margin-top:12px">
+        <div style="width:320px">
+          <div style="display:flex;justify-content:space-between"><div>Subtotal</div><div id="pvSubtotal">0.00</div></div>
+          <div style="display:flex;justify-content:space-between"><div>Tax (<span id="pvTaxPercent">0</span>%)</div><div id="pvTax">0.00</div></div>
+          <div style="display:flex;justify-content:space-between"><div>Discount</div><div id="pvDiscount">0.00</div></div>
+          <hr/>
+          <div style="display:flex;justify-content:space-between;font-weight:700;font-size:18px"><div>Grand Total</div><div id="pvGrand">0.00</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="muted small" style="margin-top:18px">Note: This is a simple invoice generator for college project demonstration. For production, add security and server-side storage.</div>
+  </div>
+
+<script>
+  // Helper: format number to 2 decimals
+  function fmt(num){ return Number(num || 0).toFixed(2); }
+
+  // Initialize
+  const itemsBody = document.getElementById('itemsBody');
+  const addRowBtn = document.getElementById('addRow');
+  const subtotalEl = document.getElementById('subtotal');
+  const taxPercent = document.getElementById('taxPercent');
+  const taxAmount = document.getElementById('taxAmount');
+  const discountEl = document.getElementById('discount');
+  const grandTotalEl = document.getElementById('grandTotal');
+
+  const pvInvoiceNo = document.getElementById('pvInvoiceNo');
+  const pvDate = document.getElementById('pvDate');
+  const pvCustName = document.getElementById('pvCustName');
+  const pvBody = document.getElementById('pvBody');
+  const pvSubtotal = document.getElementById('pvSubtotal');
+  const pvTax = document.getElementById('pvTax');
+  const pvDiscount = document.getElementById('pvDiscount');
+  const pvGrand = document.getElementById('pvGrand');
+  const pvTaxPercent = document.getElementById('pvTaxPercent');
+
+  // create new row
+  function newRow(desc='', qty=1, rate=0){
+    const tr = document.createElement('tr');
+
+    tr.innerHTML = `
+      <td><input class="i-desc" type="text" value="${desc}" placeholder="Item name"/></td>
+      <td><input class="i-qty" type="number" min="0" step="1" value="${qty}"/></td>
+      <td><input class="i-rate" type="number" min="0" step="0.01" value="${rate}"/></td>
+      <td class="lineTotal right">${fmt(qty*rate)}</td>
+      <td class="center"><button class="del">Delete</button></td>
+    `;
+    // event listeners
+    tr.querySelector('.i-qty').addEventListener('input', updateAll);
+    tr.querySelector('.i-rate').addEventListener('input', updateAll);
+    tr.querySelector('.i-desc').addEventListener('input', updateAll);
+    tr.querySelector('.del').addEventListener('click', ()=>{ tr.remove(); updateAll(); });
+    itemsBody.appendChild(tr);
+    updateAll();
+  }
+
+  // update preview & calculations
+  function updateAll(){
+    // compute subtotal
+    let subtotal = 0;
+    const rows = itemsBody.querySelectorAll('tr');
+    rows.forEach(r=>{
+      const q = parseFloat(r.querySelector('.i-qty').value || 0);
+      const rate = parseFloat(r.querySelector('.i-rate').value || 0);
+      const line = q * rate;
+      r.querySelector('.lineTotal').textContent = fmt(line);
+      subtotal += line;
+    });
+    subtotalEl.textContent = fmt(subtotal);
+
+    // tax calc
+    const taxP = parseFloat(taxPercent.value || 0);
+    const taxAmt = subtotal * (taxP/100);
+    taxAmount.textContent = fmt(taxAmt);
+
+    // discount
+    const discount = parseFloat(discountEl.value || 0);
+
+    const grand = subtotal + taxAmt - discount;
+    grandTotalEl.textContent = fmt(grand<0?0:grand);
+
+    // update preview
+    pvInvoiceNo.textContent = document.getElementById('invoiceNo').value || 'INV-001';
+    const d = document.getElementById('invoiceDate').value;
+    pvDate.textContent = d ? new Date(d).toLocaleDateString() : new Date().toLocaleDateString();
+    pvCustName.textContent = document.getElementById('custName').value || 'Customer Name';
+
+    pvBody.innerHTML = '';
+    rows.forEach(r=>{
+      const desc = r.querySelector('.i-desc').value || '';
+      const q = parseFloat(r.querySelector('.i-qty').value || 0);
+      const rate = parseFloat(r.querySelector('.i-rate').value || 0);
+      const line = q * rate;
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td style="padding:6px;border:1px solid #ddd">${desc}</td>
+                      <td style="padding:6px;border:1px solid #ddd">${fmt(q)}</td>
+                      <td style="padding:6px;border:1px solid #ddd">${fmt(rate)}</td>
+                      <td style="padding:6px;border:1px solid #ddd">${fmt(line)}</td>`;
+      pvBody.appendChild(tr);
+    });
+
+    pvSubtotal.textContent = fmt(subtotal);
+    pvTaxPercent.textContent = fmt(taxP);
+    pvTax.textContent = fmt(taxAmt);
+    pvDiscount.textContent = fmt(discount);
+    pvGrand.textContent = fmt(grand<0?0:grand);
+  }
+
+  // Add first two default rows
+  newRow('Sample Item 1',1,250);
+  newRow('Sample Item 2',2,120);
+
+  addRowBtn.addEventListener('click', ()=> newRow('New Item',1,0));
+  taxPercent.addEventListener('input', updateAll);
+  discountEl.addEventListener('input', updateAll);
+  document.getElementById('invoiceNo').addEventListener('input', updateAll);
+  document.getElementById('invoiceDate').addEventListener('change', updateAll);
+  document.getElementById('custName').addEventListener('input', updateAll);
+
+  // Save locally (localStorage)
+  document.getElementById('saveLocal').addEventListener('click', ()=>{
+    const data = {
+      invoiceNo: document.getElementById('invoiceNo').value,
+      date: document.getElementById('invoiceDate').value,
+      customer: document.getElementById('custName').value,
+      taxPercent: taxPercent.value,
+      discount: discountEl.value,
+      items: []
+    };
+    document.querySelectorAll('#itemsBody tr').forEach(r=>{
+      data.items.push({
+        desc: r.querySelector('.i-desc').value,
+        qty: r.querySelector('.i-qty').value,
+        rate: r.querySelector('.i-rate').value
+      });
+    });
+    // save
+    const key = 'invoice_'+ (data.invoiceNo || new Date().getTime());
+    localStorage.setItem(key, JSON.stringify(data));
+    alert('Saved locally as '+key);
+  });
+
+  // Download PDF using html2canvas + jsPDF
+  document.getElementById('downloadPdf').addEventListener('click', async ()=>{
+    updateAll();
+    const element = document.getElementById('invoicePreview');
+    // increase scale for better quality
+    const canvas = await html2canvas(element, {scale: 2});
+    const imgData = canvas.toDataURL('image/png');
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ unit: 'pt', format: 'a4' });
+    // calculate image size to fit A4 with margins
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const margin = 20;
+    const imgProps = { width: canvas.width, height: canvas.height };
+    // scale to fit width
+    const pdfWidth = pageWidth - margin*2;
+    const scale = pdfWidth / imgProps.width;
+    const pdfHeight = imgProps.height * scale;
+    pdf.addImage(imgData, 'PNG', margin, margin, pdfWidth, pdfHeight);
+    pdf.save((document.getElementById('invoiceNo').value || 'invoice') + '.pdf');
+  });
+
+  // Sample fill
+  document.getElementById('loadSample').addEventListener('click', ()=>{
+    itemsBody.innerHTML = '';
+    newRow('Website design',1,5000);
+    newRow('Hosting (1 year)',1,1200);
+    newRow('Domain (1 year)',1,799);
+    taxPercent.value = 18;
+    discountEl.value = 200;
+    document.getElementById('custName').value = 'ABC Enterprises';
+    document.getElementById('invoiceNo').value = 'INV-2025-05';
+    document.getElementById('invoiceDate').value = new Date().toISOString().slice(0,10);
+    updateAll();
+  });
+
+  // initial update
+  updateAll();
+</script>
+</body>
+</html>
